@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SABRe: Simple Audio Book Recorder</title>
+    <link href="https://fonts.googleapis.com/css2?family=Mozilla+Text:wght@200..700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: "Mozilla Text", sans-serif; margin: 30px; background-color: #e8decc}
+        #sentence { font-size: 1.2em; margin-bottom: 20px; }
+        #controls button { margin: 0 5px; }
+        #uploadForm, #recorder { margin-bottom: 25px; }
+        button {
+            background-color: #e1ecf4;
+            border-radius: 3px;
+            border: 1px solid #7aa7c7;
+            box-shadow: rgba(255, 255, 255, .7) 0 1px 0 0 inset;
+            box-sizing: border-box;
+            color: #39739d;
+            cursor: pointer;
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 1.15385;
+            margin: 0;
+            outline: none;
+            padding: 8px .8em;
+            position: relative;
+            text-align: center;
+            text-decoration: none;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            vertical-align: baseline;
+            white-space: nowrap;
+        }
+
+        button:hover,
+        button:focus {
+        background-color: #b3d3ea;
+        color: #2c5777;
+        font-weight: bold;
+        }
+
+        button:focus {
+        box-shadow: 0 0 0 4px rgba(0, 149, 255, .15);
+        }
+
+        button:active {
+        background-color: #a0c7e4;
+        box-shadow: none;
+        color: #2c5f85;
+        }
+
+        button:disabled {
+        background-color: lightgrey;
+        box-shadow: none;
+        color: grey;
+        }
+    </style>
+</head>
+<body style="text-align: center; margin-left: 10em; margin-right: 10em">
+    <div >
+        <h1>SABRe: Simple Audio Book Recorder</h1>
+        <hr>
+    </div>
+    <div style="text-align: left;">
+        <span id="sentCntDisplay" style="background-color: cornflowerblue; color:white">Sentences recorded: 0</span>
+    </div>
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" id="fileInput" accept=".txt" required>
+        <button type="submit">Upload selected file</button>
+    </form>
+    <div id="recorder" style="display: none;">
+        <div id="sentence"></div>
+        <div id="controls">
+            <button id="recordBtn">Record</button>
+            <button id="stopBtn" disabled>Stop</button>
+            <button id="nextBtn" disabled>Next Sentence</button>
+        </div>
+        <audio id="audioPlayback" controls style="display:none; margin-top:10px;"></audio>
+    </div>
+    <hr>
+    <button id="downloadBtn" style="margin-top: 30px; display:grid">Download Current Recordings</button>
+    <script>
+        document.getElementById('downloadBtn').onclick = function() {
+            window.location.href = '/download-recordings';
+        };
+    </script>   
+    <script>
+        let sentences = [];
+        let current = 0;
+
+        // load sentences from file on file upload
+        document.getElementById('uploadForm').onsubmit = async function(e) {
+            e.preventDefault();
+            let form = new FormData();
+            form.append('file', document.getElementById('fileInput').files[0]);
+            let res = await fetch('/upload-sentences', { method: 'POST', body: form });
+            sentences = await res.json();
+            current = 0;
+            showSentence();
+            document.getElementById('recorder').style.display = '';
+            document.getElementById('uploadForm').style.display = 'none';
+        };
+
+        function showSentence() {
+            if (current > 0){
+                var prev_sent = sentences[current - 1]
+            }
+            else{
+                var prev_sent = "None"
+            }
+            var current_sent = sentences[current];
+            
+            if (current < sentences.length - 1){
+                var next_sent = sentences[current + 1] || "FINISHED."
+            }
+            else{
+                var next_sent = "None"
+            }
+            sent_container = document.getElementById('sentence');
+            while (sent_container.hasChildNodes()) {
+                sent_container.removeChild(sent_container.firstChild);
+            }
+            const pre_sent_p = document.createElement("p");
+            pre_sent_p.style.color = "grey";
+            pre_sent_p.innerText = "previous: " + prev_sent;
+
+            const sent_p = document.createElement("p");
+            sent_p.style.fontWeight = "bold";
+            sent_p.innerText = current_sent;
+
+            const post_sent_p = document.createElement("p");
+            post_sent_p.style.color="grey";
+            post_sent_p.innerText = "next: " + next_sent;
+
+            document.getElementById('sentence').appendChild(pre_sent_p);
+            document.getElementById('sentence').appendChild(sent_p);
+            document.getElementById('sentence').appendChild(post_sent_p);
+            document.getElementById('nextBtn').disabled = true;
+            document.getElementById('audioPlayback').style.display = 'none';
+        }
+
+        let mediaRecorder, audioChunks = [];
+        document.getElementById('recordBtn').onclick = async function() {
+            let stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = async function() {
+                let blob = new Blob(audioChunks, { type: 'audio/webm' });
+                let form = new FormData();
+                form.append('audio', blob, 'sentence' + current + '.webm');
+                form.append('sentence_idx', current);
+                form.append("sentence_text", sentences[current])
+                await fetch('/upload-audio', { method: 'POST', body: form });
+                document.getElementById('audioPlayback').src = URL.createObjectURL(blob);
+                document.getElementById('audioPlayback').style.display = '';
+                document.getElementById('nextBtn').disabled = false;
+            };
+            mediaRecorder.start();
+            document.getElementById('recordBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+        };
+
+        document.getElementById('stopBtn').onclick = function() {
+            mediaRecorder.stop();
+            document.getElementById('recordBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        };
+        
+        // Show the download button when done
+        function showDownloadButton() {
+            document.getElementById('downloadBtn').style.display = '';
+        }
+
+        document.getElementById('nextBtn').onclick = function() {
+            if (current + 1 < sentences.length) {
+            current++;
+            showSentence();
+            } else {
+            document.getElementById('recorder').innerHTML = "<strong>Finished recording all sentences...you can download them with the button below.</strong>";
+            showDownloadButton();
+            }
+            var count_display = document.getElementById("sentCntDisplay");
+            count_display.textContent = "Sentences recorded: " + current
+        };
+
+        // Download handler
+        document.getElementById('downloadBtn').onclick = function() {
+            window.location.href = '/download-recordings';
+        };
+    </script>
+</body>
+</html>
