@@ -115,7 +115,7 @@
       let current = 0;
       let startTime;
       let stopTime;
-      let totalTime = 0;
+      let durations = {};  // Store duration per sentence index
       // load sentences from file on file upload
       document.getElementById("uploadForm").onsubmit = async function (e) {
         e.preventDefault();
@@ -232,7 +232,8 @@
         count_display.textContent = "Sentences recorded: " + current;
 
         clip_dur = stopTime - startTime;
-        totalTime += clip_dur;
+        durations[current] = clip_dur;  // Replace duration for this sentence
+        let totalTime = Object.values(durations).reduce((a, b) => a + b, 0);
         console.log(getFormattedTime(totalTime));
         var dur_display = document.getElementById("durationDisplay");
         dur_display.textContent =
